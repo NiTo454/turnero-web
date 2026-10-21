@@ -157,68 +157,73 @@ export default function DashboardPage() {
             {/* Barra de Acciones y Pestañas */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-[#1C2F4D] pb-4">
               {/* Navegación por Pestañas */}
-              <div className="flex items-center gap-1.5 bg-[#101C30] p-1.5 rounded-2xl border border-[#1C2F4D] overflow-x-auto">
+              <div className="flex w-full sm:w-auto items-center gap-1 bg-[#101C30] p-1.5 rounded-2xl border border-[#1C2F4D]">
                 {puedeVerPersonal && (
                   <button
                     onClick={() => setTabActiva('monitor')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex flex-1 sm:flex-none min-w-0 items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       tabActiva === 'monitor'
                         ? 'bg-[#00E5A3] text-[#070C16] shadow-sm'
                         : 'text-[#94A3B8] hover:text-white'
                     }`}
                   >
                     <Activity className="w-4 h-4" />
-                    <span>Monitor del Día</span>
+                    <span className="sm:hidden">Monitor</span>
+                    <span className="hidden sm:inline">Monitor del Día</span>
                   </button>
                 )}
 
                 {puedeVerHistorial && (
                   <button
                     onClick={() => setTabActiva('historial')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex flex-1 sm:flex-none min-w-0 items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       tabActiva === 'historial'
                         ? 'bg-[#00E5A3] text-[#070C16] shadow-sm'
                         : 'text-[#94A3B8] hover:text-white'
                     }`}
                   >
                     <History className="w-4 h-4" />
-                    <span>Historial Global ({asistencias.length})</span>
+                    <span className="sm:hidden">Historial</span>
+                    <span className="hidden sm:inline">Historial Global ({asistencias.length})</span>
                   </button>
                 )}
 
                 {puedeVerPersonal && (
                   <button
                     onClick={() => setTabActiva('equipo')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex flex-1 sm:flex-none min-w-0 items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       tabActiva === 'equipo'
                         ? 'bg-[#00E5A3] text-[#070C16] shadow-sm'
                         : 'text-[#94A3B8] hover:text-white'
                     }`}
                   >
                     <Users className="w-4 h-4" />
-                    <span>Equipo y Roles ({empleados.length})</span>
+                    <span className="sm:hidden">Equipo</span>
+                    <span className="hidden sm:inline">Equipo y Roles ({empleados.length})</span>
                   </button>
                 )}
               </div>
 
               {/* Acciones Rápidas */}
-              <div className="flex items-center gap-2.5 self-end sm:self-auto">
+              <div className="flex w-full sm:w-auto items-center gap-2.5 self-stretch sm:self-auto">
                 {puedeExportar && (
                   <button
                     onClick={() => setModalExcelAbierto(true)}
-                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#101C30] hover:bg-[#172640] border border-[#1C2F4D] hover:border-[#00E5A3]/40 text-xs font-bold text-white transition-colors cursor-pointer"
+                    className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-3.5 py-2.5 sm:py-2 rounded-xl bg-[#101C30] hover:bg-[#172640] border border-[#1C2F4D] hover:border-[#00E5A3]/40 text-xs font-bold text-white transition-colors cursor-pointer"
                   >
                     <FileSpreadsheet className="w-4 h-4 text-[#00E5A3]" />
-                    <span>Descargar Excel</span>
+                    <span className="sm:hidden">Excel</span>
+                    <span className="hidden sm:inline">Descargar Excel</span>
                   </button>
                 )}
 
                 <button
                   onClick={() => router.push('/fichar')}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#00E5A3] to-[#38BDF8] text-[#070C16] text-xs font-bold shadow-md mint-glow hover:opacity-95 transition-all cursor-pointer"
+                  className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-4 py-2.5 sm:py-2 rounded-xl bg-gradient-to-r from-[#00E5A3] to-[#38BDF8] text-[#070C16] text-xs font-bold shadow-md mint-glow hover:opacity-95 transition-all cursor-pointer"
                 >
                   <PlusCircle className="w-4 h-4" />
-                  <span>Nuevo Fichaje</span>
+                  <span className="sm:hidden">Fichar</span>
+                  <span className="hidden sm:inline">Nuevo Fichaje</span>
                 </button>
               </div>
             </div>
