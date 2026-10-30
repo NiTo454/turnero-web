@@ -4,6 +4,8 @@ export const PERMISOS = {
   // Asistencia
   FICHAJE: 'asistencia.fichar',
   VER_TURNOS_PROPIOS: 'asistencia.ver_propios',
+  EDITAR_ASISTENCIAS: 'asistencia.editar_registros',
+  ELIMINAR_ASISTENCIAS: 'asistencia.eliminar_registros',
 
   // Reportes
   VER_HISTORIAL_GLOBAL: 'reportes.ver_historial',
@@ -24,6 +26,8 @@ export const PERMISOS = {
 export const TODOS_LOS_PERMISOS: PermisoDefinicion[] = [
   { codename: PERMISOS.FICHAJE, nombre: 'Registrar Entrada/Salida', modulo: 'asistencia' },
   { codename: PERMISOS.VER_TURNOS_PROPIOS, nombre: 'Ver Turnos Propios', modulo: 'asistencia' },
+  { codename: PERMISOS.EDITAR_ASISTENCIAS, nombre: 'Editar registros de asistencia', modulo: 'asistencia' },
+  { codename: PERMISOS.ELIMINAR_ASISTENCIAS, nombre: 'Eliminar registros de asistencia', modulo: 'asistencia' },
   { codename: PERMISOS.VER_HISTORIAL_GLOBAL, nombre: 'Ver Historial Global', modulo: 'reportes' },
   { codename: PERMISOS.EXPORTAR_EXCEL, nombre: 'Exportar a Excel', modulo: 'reportes' },
   { codename: PERMISOS.EXPORTAR_DRIVE, nombre: 'Exportar a Drive', modulo: 'reportes' },
@@ -64,6 +68,8 @@ export const ROLES_DEFAULT: Record<string, RolDefinicion> = {
     permisos: [
       PERMISOS.FICHAJE,
       PERMISOS.VER_TURNOS_PROPIOS,
+      PERMISOS.EDITAR_ASISTENCIAS,
+      PERMISOS.ELIMINAR_ASISTENCIAS,
       PERMISOS.VER_HISTORIAL_GLOBAL,
       PERMISOS.EXPORTAR_EXCEL,
       PERMISOS.EXPORTAR_DRIVE,

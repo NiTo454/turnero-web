@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Asistencia, Empleado } from '@/types';
+import { Asistencia, Empleado, IncidenciaAsistencia } from '@/types';
 import { formatFechaHora } from '@/lib/excel';
+import AttendanceRecordActions from '@/components/dashboard/AttendanceRecordActions';
 import {
   Users,
   CheckCircle2,
@@ -20,6 +21,14 @@ import { obtenerFechaLocalIso } from '@/lib/filters';
 interface Props {
   asistencias: Asistencia[];
   empleados: Empleado[];
+  incidencias: IncidenciaAsistencia[];
+  incidenciasError: string | null;
+  puedeEditarAsistencias: boolean;
+  puedeEliminarAsistencias: boolean;
+  onDarAsistencia: (incidencia: IncidenciaAsistencia) => Promise<void>;
+  onViewAttendance: (asistencia: Asistencia) => void;
+  onEditAttendance: (asistencia: Asistencia) => void;
+  onDeleteAttendance: (asistencia: Asistencia) => void;
   onOpenPhoto: (url: string, title: string) => void;
 }
 
@@ -35,9 +44,23 @@ function whatsappLink(telefono: string, nombre: string): string {
   return `https://wa.me/${e164.replace('+', '')}?text=${msg}`;
 }
 
-export default function LiveAttendanceMonitor({ asistencias, empleados, onOpenPhoto }: Props) {
+export default function LiveAttendanceMonitor({
+  asistencias,
+  empleados,
+  incidencias,
+  incidenciasError,
+  puedeEditarAsistencias,
+  puedeEliminarAsistencias,
+  onDarAsistencia,
+  onViewAttendance,
+  onEditAttendance,
+  onDeleteAttendance,
+  onOpenPhoto,
+}: Props) {
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string>('');
   const [filtroEstado, setFiltroEstado] = useState<'TODOS' | 'LLEGARON' | 'FALTAN'>('TODOS');
+  const [incidenciaEnProceso, setIncidenciaEnProceso] = useState<string | null>(null);
+  const [errorAccionIncidencia, setErrorAccionIncidencia] = useState<string | null>(null);
 
   React.useEffect(() => {
     setFechaSeleccionada(obtenerFechaLocalIso(new Date()));
@@ -60,9 +83,92 @@ export default function LiveAttendanceMonitor({ asistencias, empleados, onOpenPh
 
   const entradasHoy = asistenciasDelDia.filter((a) => a.tipo === 'ENTRADA').length;
   const salidasHoy = asistenciasDelDia.filter((a) => a.tipo === 'SALIDA').length;
+  const incidenciasPendientes = incidencias.filter((incidencia) => incidencia.estado === 'PENDIENTE');
 
   return (
     <div className="space-y-6">
+      {(incidenciasPendientes.length > 0 || incidenciasError) && (
+        <section className="glass-card rounded-2xl p-5 border border-[#FB7185]/30">
+          <h2 className="font-bold text-white text-base mb-4 flex items-center gap-2">
+            <HeartPulse className="w-5 h-5 text-[#FB7185]" />
+            Solicitudes de ayuda ({incidenciasPendientes.length})
+          </h2>
+          {incidenciasError && (
+            <p role="alert" className="mb-3 text-sm text-[#FB7185]">{incidenciasError}</p>
+          )}
+          {errorAccionIncidencia && (
+            <p role="alert" className="mb-3 text-sm text-[#FB7185]">{errorAccionIncidencia}</p>
+          )}
+          <div className="space-y-3">
+            {incidenciasPendientes.map((incidencia) => (
+              <article
+                key={incidencia.id}
+                className="rounded-xl bg-[#101C30] border border-[#1C2F4D] p-4 flex flex-col md:flex-row md:items-center justify-between gap-4"
+              >
+                <div className="min-w-0">
+                  {(incidencia.foto_url || incidencia.foto_drive_url) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenPhoto(
+                          incidencia.foto_url || incidencia.foto_drive_url!,
+                          `Evidencia de ${incidencia.empleado_nombre}`
+                        )
+                      }
+                      className="mb-3 block overflow-hidden rounded-xl border border-[#1C2F4D]"
+                      aria-label={`Ver foto enviada por ${incidencia.empleado_nombre}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={incidencia.foto_url || incidencia.foto_drive_url}
+                        alt={`Foto de evidencia enviada por ${incidencia.empleado_nombre}`}
+                        className="h-24 w-32 object-cover"
+                      />
+                    </button>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="font-bold text-white">{incidencia.empleado_nombre}</span>
+                    <span className="px-2 py-0.5 rounded-md bg-[#FB7185]/10 border border-[#FB7185]/30 text-[#FB7185] text-[10px] font-bold">
+                      {incidencia.tipo}
+                    </span>
+                    <span className="text-xs text-[#94A3B8]">Turno {incidencia.turno}</span>
+                  </div>
+                  <p className="text-sm text-white break-words">{incidencia.motivo}</p>
+                  <p className="mt-1 text-xs text-[#94A3B8]">
+                    {incidencia.error_ubicacion} · {incidencia.intentos} intentos · {incidencia.empleado_email}
+                  </p>
+                  <p className="mt-1 text-xs text-[#38BDF8]">
+                    Pacientes: {incidencia.pacientes.length > 0 ? incidencia.pacientes.join(', ') : 'Sin información'}
+                    {' · '}{incidencia.entidad_federativa}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={incidenciaEnProceso !== null}
+                  onClick={async () => {
+                    setIncidenciaEnProceso(incidencia.id);
+                    setErrorAccionIncidencia(null);
+                    try {
+                      await onDarAsistencia(incidencia);
+                    } catch (error) {
+                      console.error('Error al registrar asistencia asistida:', error);
+                      setErrorAccionIncidencia(
+                        error instanceof Error ? error.message : 'No se pudo registrar la asistencia.'
+                      );
+                    } finally {
+                      setIncidenciaEnProceso(null);
+                    }
+                  }}
+                  className="shrink-0 px-4 py-2.5 rounded-xl bg-[#00E5A3] text-[#070C16] text-xs font-bold disabled:opacity-50"
+                >
+                  {incidenciaEnProceso === incidencia.id ? 'Registrando...' : 'Dar asistencia'}
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Selector de Fecha y Filtros */}
       <div className="glass-card rounded-2xl p-4 sm:p-5 border border-[#1C2F4D] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -308,6 +414,11 @@ export default function LiveAttendanceMonitor({ asistencias, empleados, onOpenPh
                           >
                             {asistencia.tipo}
                           </span>
+                          {asistencia.asistencia_manual && (
+                            <span className="px-2 py-0.5 rounded-md bg-[#FBBF24]/10 border border-[#FBBF24]/30 text-[#FBBF24] text-[10px] font-bold">
+                              ASISTENCIA ASISTIDA
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-[#94A3B8] mt-0.5">
                           {asistencia.empleado_rol} • Turno {asistencia.turno}
@@ -316,6 +427,11 @@ export default function LiveAttendanceMonitor({ asistencias, empleados, onOpenPh
                           <HeartPulse className="w-3.5 h-3.5" />
                           <span>Pacientes: {asistencia.paciente}</span>
                         </div>
+                        {asistencia.motivo_registro_manual && (
+                          <div className="text-[11px] text-[#FBBF24] mt-1">
+                            Motivo de asistencia manual: {asistencia.motivo_registro_manual}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -334,6 +450,14 @@ export default function LiveAttendanceMonitor({ asistencias, empleados, onOpenPh
                         </a>
                       )}
                     </div>
+                    <AttendanceRecordActions
+                      recordName={asistencia.empleado_nombre}
+                      onView={() => onViewAttendance(asistencia)}
+                      canEdit={puedeEditarAsistencias}
+                      canDelete={puedeEliminarAsistencias}
+                      onEdit={() => onEditAttendance(asistencia)}
+                      onDelete={() => onDeleteAttendance(asistencia)}
+                    />
                   </div>
                 );
               })}

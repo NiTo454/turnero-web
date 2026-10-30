@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { subirFotoAGoogleDrive } from '@/lib/drive';
-import { UbicacionGPS } from '@/types';
+import { IncidenciaAsistencia } from '@/types';
 import confetti from 'canvas-confetti';
 import {
   Clock,
@@ -17,11 +17,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowLeft,
-  UploadCloud,
   Navigation,
   Sparkles,
   RotateCw,
   Radio,
+  Send,
+  X,
 } from 'lucide-react';
 import { useHighAccuracyGeolocation } from '@/hooks/useHighAccuracyGeolocation';
 
@@ -76,6 +77,7 @@ export default function FichajePage() {
     isLoading: isLoadingGps,
     isCalibrating,
     error: gpsError,
+    permissionState,
     mejoraMargen,
     recalibrar: obtenerUbicacion,
   } = useHighAccuracyGeolocation();
@@ -87,8 +89,20 @@ export default function FichajePage() {
 
   // Proceso de guardado
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [asistenciaGuardada, setAsistenciaGuardada] = useState(false);
   const [savingStep, setSavingStep] = useState<string>('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [intentosReporteFallidos, setIntentosReporteFallidos] = useState(0);
+  const [mostrarModalIncidencia, setMostrarModalIncidencia] = useState(false);
+  const [modalUbicacionDismissed, setModalUbicacionDismissed] = useState(false);
+  const mostrarModalUbicacion =
+    (permissionState === 'denied' || permissionState === 'unsupported') && !modalUbicacionDismissed;
+  const [motivoIncidencia, setMotivoIncidencia] = useState('');
+  const [errorIncidencia, setErrorIncidencia] = useState<string | null>(null);
+  const [incidenciaEnviada, setIncidenciaEnviada] = useState(false);
+  const [enviandoIncidencia, setEnviandoIncidencia] = useState(false);
+  const incidenciaEnviadaRef = useRef(false);
+  const incidenciaEnProcesoRef = useRef(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -128,6 +142,76 @@ export default function FichajePage() {
     reader.readAsDataURL(file);
   };
 
+  const registrarIntentoFallido = (motivo: string) => {
+    const totalIntentos = intentosReporteFallidos + 1;
+    setIntentosReporteFallidos(totalIntentos);
+    setMotivoIncidencia(motivo);
+    if (totalIntentos >= 3 && !incidenciaEnviada) setMostrarModalIncidencia(true);
+  };
+
+  const handleEnviarIncidencia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (incidenciaEnviadaRef.current || incidenciaEnProcesoRef.current) return;
+    const motivo = motivoIncidencia.trim();
+    if (!user || !motivo) {
+      setErrorIncidencia('Describe brevemente el problema para que el administrador pueda ayudarte.');
+      return;
+    }
+
+    setErrorIncidencia(null);
+    incidenciaEnProcesoRef.current = true;
+    setEnviandoIncidencia(true);
+    try {
+      const pacientesLimpios = pacientes.map((p) => p.trim()).filter(Boolean);
+      let fotoIncidencia = { id: '', url: '', drive_url: '' };
+      if (fotoFile || fotoPreview) {
+        try {
+          fotoIncidencia = await subirFotoAGoogleDrive(fotoFile || fotoPreview!);
+        } catch (photoError) {
+          console.error('Error al subir fotografía de la solicitud:', photoError);
+          throw new Error('No se pudo subir la fotografía. Verifica tu conexión e inténtalo de nuevo.');
+        }
+      }
+
+      const incidencia: Omit<IncidenciaAsistencia, 'id' | 'creado_en'> = {
+        empleado_uid: user.uid,
+        empleado_nombre: empleado?.nombre || user.displayName || 'Personal de Salud',
+        empleado_email: empleado?.email || user.email || '',
+        empleado_rol: empleado?.rol || 'Enfermera',
+        tipo,
+        turno,
+        pacientes: pacientesLimpios,
+        entidad_federativa: entidad,
+        intentos: intentosReporteFallidos,
+        motivo,
+        error_ubicacion: gpsError || 'No se pudo completar el registro de asistencia.',
+        ...(gps ? { ubicacion_gps: gps } : {}),
+        ...(fotoIncidencia.url || fotoPreview
+          ? { foto_url: fotoIncidencia.url || fotoPreview! }
+          : {}),
+        ...(fotoIncidencia.drive_url ? { foto_drive_url: fotoIncidencia.drive_url } : {}),
+        ...(fotoIncidencia.id ? { foto_drive_id: fotoIncidencia.id } : {}),
+        estado: 'PENDIENTE',
+        fecha_local_str: new Date().toISOString(),
+      };
+
+      await addDoc(collection(db, 'incidencias_asistencia'), {
+        ...incidencia,
+        creado_en: serverTimestamp(),
+      });
+      incidenciaEnviadaRef.current = true;
+      setIncidenciaEnviada(true);
+      setMostrarModalIncidencia(false);
+      setTimeout(() => router.replace('/'), 1000);
+    } catch (error) {
+      console.error('Error al enviar solicitud de asistencia:', error);
+      setErrorIncidencia('No se pudo enviar la solicitud. Revisa tu conexión e inténtalo de nuevo.');
+    } finally {
+      incidenciaEnProcesoRef.current = false;
+      setEnviandoIncidencia(false);
+    }
+  };
+
   // Guardar Fichaje
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,7 +224,9 @@ export default function FichajePage() {
     }
 
     if (!gps) {
-      setFormError('Se requiere ubicación GPS válida para registrar la asistencia.');
+      const motivo = gpsError || 'Aún no se ha obtenido una ubicación GPS válida.';
+      setFormError(`${motivo} Pulsa “Obtener ubicación” y vuelve a intentar.`);
+      registrarIntentoFallido(motivo);
       obtenerUbicacion();
       return;
     }
@@ -161,7 +247,7 @@ export default function FichajePage() {
         } else if (fotoPreview) {
           driveData = await subirFotoAGoogleDrive(fotoPreview);
         }
-      } catch (err: any) {
+      } catch (err) {
         console.warn('Advertencia subiendo foto a Drive:', err);
       }
 
@@ -198,26 +284,39 @@ export default function FichajePage() {
         fecha_local_str: new Date().toISOString(),
       });
 
-      // Animación de confeti de celebración
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#00E5A3', '#38BDF8', '#FBBF24'],
-      });
+      setSavingStep('¡Asistencia registrada con éxito!');
+      setIntentosReporteFallidos(0);
+      setIsSaving(false);
+      setAsistenciaGuardada(true);
 
-      // Feedback háptico en móviles
-      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-        navigator.vibrate([40, 60, 40]);
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#00E5A3', '#38BDF8', '#FBBF24'],
+        });
+      } catch (feedbackError) {
+        console.warn('No se pudo mostrar la animación de confirmación:', feedbackError);
       }
 
-      setSavingStep('¡Asistencia registrada con éxito!');
+      try {
+        if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate([40, 60, 40]);
+        }
+      } catch (feedbackError) {
+        console.warn('No se pudo activar la respuesta háptica:', feedbackError);
+      }
+
       setTimeout(() => {
-        router.push('/');
-      }, 1500);
-    } catch (err: any) {
+        router.replace('/');
+      }, 1200);
+    } catch (err) {
       console.error(err);
-      setFormError('Error al guardar asistencia: ' + (err.message || err));
+      const detalle = err instanceof Error ? err.message : String(err);
+      const motivo = 'Error al guardar asistencia: ' + detalle;
+      setFormError(motivo);
+      registrarIntentoFallido(motivo);
       setIsSaving(false);
     }
   };
@@ -313,18 +412,161 @@ export default function FichajePage() {
         </div>
 
         {/* Modal de Progreso al Guardar */}
-        {isSaving && (
+        {(isSaving || asistenciaGuardada) && (
           <div className="fixed inset-0 z-50 bg-[#070C16]/80 backdrop-blur-md flex items-center justify-center p-4">
             <div className="glass-card max-w-sm w-full p-8 rounded-3xl border border-[#00E5A3]/40 text-center mint-glow animate-in fade-in zoom-in-95">
               <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#00E5A3]/10 border border-[#00E5A3]/30 flex items-center justify-center text-[#00E5A3]">
-                <UploadCloud className="w-8 h-8 animate-bounce" />
+                <CheckCircle2 className={`w-8 h-8 ${asistenciaGuardada ? '' : 'animate-bounce'}`} />
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">Procesando Fichaje</h3>
+              <h3 className="text-lg font-bold text-white mb-2">
+                {asistenciaGuardada ? '¡Asistencia registrada!' : 'Procesando Fichaje'}
+              </h3>
               <p className="text-sm text-[#94A3B8] mb-4">{savingStep}</p>
-              <div className="w-full bg-[#101C30] rounded-full h-2 overflow-hidden">
-                <div className="bg-gradient-to-r from-[#00E5A3] to-[#38BDF8] h-full w-full animate-pulse" />
-              </div>
+              {asistenciaGuardada ? (
+                <button
+                  type="button"
+                  onClick={() => router.replace('/')}
+                  className="w-full min-h-12 rounded-xl bg-[#00E5A3] text-[#070C16] font-bold text-sm"
+                >
+                  Volver al inicio
+                </button>
+              ) : (
+                <div className="w-full bg-[#101C30] rounded-full h-2 overflow-hidden">
+                  <div className="bg-gradient-to-r from-[#00E5A3] to-[#38BDF8] h-full w-full animate-pulse" />
+                </div>
+              )}
             </div>
+          </div>
+        )}
+
+        {mostrarModalUbicacion && (
+          <div className="fixed inset-0 z-[60] bg-[#070C16]/85 backdrop-blur-md flex items-center justify-center p-4">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-ubicacion-titulo"
+              className="glass-card max-w-md w-full p-6 rounded-3xl border border-[#FBBF24]/40 relative"
+            >
+              <button
+                type="button"
+                onClick={() => setModalUbicacionDismissed(true)}
+                aria-label="Cerrar aviso de ubicación"
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-[#94A3B8] hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="w-12 h-12 mb-4 rounded-2xl bg-[#FBBF24]/10 border border-[#FBBF24]/30 flex items-center justify-center text-[#FBBF24]">
+                <MapPin className="w-6 h-6" />
+              </div>
+              <h2 id="modal-ubicacion-titulo" className="text-lg font-bold text-white mb-2">
+                Permite el acceso a tu ubicación
+              </h2>
+              <p className="text-sm text-[#94A3B8] mb-4">
+                {gpsError || 'Para registrar tu asistencia necesitamos que autorices la ubicación del dispositivo.'}
+              </p>
+              <div className="text-xs text-[#94A3B8] bg-[#101C30] border border-[#1C2F4D] rounded-xl p-3 mb-5">
+                Revisa que la ubicación esté activada en el dispositivo y permite el acceso para este sitio desde los ajustes del navegador (normalmente, el icono junto a la dirección web). En iPhone, también puedes revisar Ajustes &gt; Privacidad y seguridad &gt; Localización y permitirla para Safari. Si cambiaste el permiso, vuelve a intentar aquí. El sitio debe abrirse mediante HTTPS.
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setModalUbicacionDismissed(true);
+                  obtenerUbicacion();
+                }}
+                className="w-full py-3 rounded-xl bg-[#00E5A3] text-[#070C16] font-bold text-sm"
+              >
+                Volver a solicitar ubicación
+              </button>
+            </section>
+          </div>
+        )}
+
+        {mostrarModalIncidencia && (
+          <div className="fixed inset-0 z-[60] bg-[#070C16]/85 backdrop-blur-md flex items-center justify-center p-4">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-incidencia-titulo"
+              className="glass-card max-w-md w-full p-6 rounded-3xl border border-[#FB7185]/40 relative"
+            >
+              <button
+                type="button"
+                onClick={() => setMostrarModalIncidencia(false)}
+                disabled={enviandoIncidencia}
+                aria-label="Cerrar solicitud de asistencia"
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-[#94A3B8] hover:text-white disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="w-12 h-12 mb-4 rounded-2xl bg-[#FB7185]/10 border border-[#FB7185]/30 flex items-center justify-center text-[#FB7185]">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <h2 id="modal-incidencia-titulo" className="text-lg font-bold text-white mb-2">
+                Solicitar ayuda al administrador
+              </h2>
+              <p className="text-sm text-[#94A3B8] mb-4">
+                Ya fallaron {intentosReporteFallidos} intentos. Cuéntanos qué ocurrió; enviaremos el error técnico y tus datos del turno para que el administrador pueda registrar tu asistencia.
+              </p>
+              <form onSubmit={handleEnviarIncidencia} className="space-y-4">
+                <div>
+                  <div className="text-xs font-semibold text-[#94A3B8] mb-2">
+                    Fotografía de evidencia (opcional)
+                  </div>
+                  {fotoPreview ? (
+                    <div className="flex items-center gap-3 rounded-xl bg-[#101C30] border border-[#1C2F4D] p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={fotoPreview}
+                        alt="Vista previa de la fotografía de asistencia"
+                        className="w-16 h-16 rounded-lg object-cover"
+                      />
+                      <span className="text-xs text-[#00E5A3] flex-1">Foto lista para enviar</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFotoFile(null);
+                          setFotoPreview(null);
+                        }}
+                        className="px-3 py-2 rounded-lg text-xs text-[#FB7185] border border-[#FB7185]/30"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full min-h-11 rounded-xl bg-[#101C30] border border-[#1C2F4D] text-sm font-semibold text-[#38BDF8]"
+                    >
+                      Tomar o elegir fotografía
+                    </button>
+                  )}
+                </div>
+                <label className="block text-xs font-semibold text-[#94A3B8]">
+                  ¿Qué problema tuviste?
+                  <textarea
+                    required
+                    rows={4}
+                    maxLength={1000}
+                    value={motivoIncidencia}
+                    onChange={(event) => setMotivoIncidencia(event.target.value)}
+                    placeholder="Describe el problema, por ejemplo: Safari no muestra el permiso de ubicación."
+                    className="mt-2 w-full resize-y rounded-xl bg-[#101C30] border border-[#1C2F4D] p-3 text-sm text-white placeholder-[#64748B] focus:outline-none focus:border-[#FB7185]"
+                  />
+                </label>
+                {errorIncidencia && (
+                  <p role="alert" className="text-sm text-[#FB7185]">{errorIncidencia}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={incidenciaEnviada || enviandoIncidencia}
+                  className="w-full min-h-12 py-3 rounded-xl bg-[#FB7185] text-[#070C16] font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                  {enviandoIncidencia ? 'Enviando solicitud...' : 'Enviar al administrador'}
+                </button>
+              </form>
+            </section>
           </div>
         )}
 
@@ -334,6 +576,39 @@ export default function FichajePage() {
             <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <span>{formError}</span>
           </div>
+        )}
+        {incidenciaEnviada && (
+          <div className="fixed inset-0 z-[70] bg-[#070C16]/85 backdrop-blur-md flex items-center justify-center p-4">
+            <section
+              role="status"
+              aria-live="polite"
+              className="glass-card max-w-sm w-full p-7 rounded-3xl border border-[#00E5A3]/40 text-center"
+            >
+              <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-[#00E5A3]/10 border border-[#00E5A3]/30 flex items-center justify-center text-[#00E5A3]">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h2 className="text-lg font-bold text-white">Solicitud enviada</h2>
+              <p className="mt-2 mb-5 text-sm text-[#94A3B8]">
+                El administrador recibió el motivo del problema. Volviendo al inicio para evitar enviar reportes duplicados…
+              </p>
+              <button
+                type="button"
+                onClick={() => router.replace('/')}
+                className="w-full min-h-12 rounded-xl bg-[#00E5A3] text-[#070C16] font-bold text-sm"
+              >
+                Volver al inicio
+              </button>
+            </section>
+          </div>
+        )}
+        {intentosReporteFallidos >= 3 && !incidenciaEnviada && (
+          <button
+            type="button"
+            onClick={() => setMostrarModalIncidencia(true)}
+            className="mb-6 w-full p-3 rounded-xl bg-[#FB7185]/10 border border-[#FB7185]/30 text-sm font-semibold text-[#FB7185]"
+          >
+            Enviar al administrador el motivo de los {intentosReporteFallidos} intentos fallidos
+          </button>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -400,9 +675,33 @@ export default function FichajePage() {
                 )}
               </div>
             ) : gpsError ? (
-              <div className="text-xs text-[#FB7185]">{gpsError}</div>
+              <div className="space-y-3">
+                <div className="text-xs text-[#FB7185]">{gpsError}</div>
+                <button
+                  type="button"
+                  onClick={obtenerUbicacion}
+                  disabled={isLoadingGps}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#101C30] border border-[#1C2F4D] text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isLoadingGps ? 'animate-spin' : ''}`} />
+                  {isLoadingGps ? 'Obteniendo ubicación...' : 'Volver a intentar'}
+                </button>
+              </div>
             ) : (
-              <div className="text-xs text-[#94A3B8]">Conectando con satélites GPS...</div>
+              <div className="space-y-3">
+                <div className="text-xs text-[#94A3B8]">
+                  {isLoadingGps ? 'Obteniendo ubicación del dispositivo...' : 'Solicita permiso de ubicación para registrar tu asistencia.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={obtenerUbicacion}
+                  disabled={isLoadingGps}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#00E5A3]/10 border border-[#00E5A3]/30 text-xs font-semibold text-[#00E5A3] disabled:opacity-50"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  {isLoadingGps ? 'Obteniendo ubicación...' : 'Obtener ubicación'}
+                </button>
+              </div>
             )}
           </div>
 
