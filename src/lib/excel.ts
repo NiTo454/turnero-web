@@ -1,17 +1,25 @@
 import * as XLSX from 'xlsx';
 import { Asistencia } from '@/types';
 
-export function formatFechaHora(val: any): { fecha: string; hora: string } {
+export function formatFechaHora(val: unknown): { fecha: string; hora: string } {
   let date: Date;
   if (!val) {
     date = new Date();
-  } else if (val.toDate && typeof val.toDate === 'function') {
+  } else if (
+    typeof val === 'object' &&
+    'toDate' in val &&
+    typeof val.toDate === 'function'
+  ) {
     date = val.toDate();
   } else if (typeof val === 'string') {
     date = new Date(val);
   } else if (val instanceof Date) {
     date = val;
-  } else if (val.seconds) {
+  } else if (
+    typeof val === 'object' &&
+    'seconds' in val &&
+    typeof val.seconds === 'number'
+  ) {
     date = new Date(val.seconds * 1000);
   } else {
     date = new Date();
@@ -45,6 +53,9 @@ export function exportarAsistenciasAExcel(
   // Filas del archivo
   const rows = asistencias.map((asistencia, index) => {
     const { fecha, hora } = formatFechaHora(asistencia.fecha_hora || asistencia.fecha_local_str);
+    const fechaModificacion = asistencia.actualizado_en
+      ? formatFechaHora(asistencia.actualizado_en)
+      : null;
     const gps = asistencia.ubicacion_gps;
     const gpsCoordStr = gps ? `${gps.latitud?.toFixed(5) ?? 0}, ${gps.longitud?.toFixed(5) ?? 0}` : 'Sin GPS';
     const gpsPrecStr = gps ? `±${gps.precision_metros?.toFixed(1) ?? 0}m (${gps.calidad_gps || 'N/A'})` : 'N/A';
@@ -63,6 +74,14 @@ export function exportarAsistenciasAExcel(
       'COORDENADAS GPS': gpsCoordStr,
       'PRECISIÓN GPS': gpsPrecStr,
       'FOTO EN GOOGLE DRIVE': asistencia.foto_drive_url || asistencia.foto_url || 'Sin foto',
+      'ASISTENCIA ASISTIDA': asistencia.asistencia_manual ? 'Sí' : 'No',
+      'MOTIVO ASISTENCIA MANUAL': asistencia.motivo_registro_manual || '',
+      'REGISTRADA POR': asistencia.registrada_por_nombre || '',
+      'MODIFICADA': asistencia.actualizado_en ? 'Sí' : 'No',
+      'FECHA MODIFICACIÓN': fechaModificacion
+        ? `${fechaModificacion.fecha} ${fechaModificacion.hora}`
+        : '',
+      'MODIFICADA POR': asistencia.actualizado_por_nombre || '',
     };
   });
 
@@ -84,6 +103,12 @@ export function exportarAsistenciasAExcel(
     { wch: 24 }, // COORDENADAS
     { wch: 18 }, // PRECISIÓN
     { wch: 45 }, // FOTO DRIVE
+    { wch: 20 }, // ASISTENCIA ASISTIDA
+    { wch: 45 }, // MOTIVO ASISTENCIA MANUAL
+    { wch: 28 }, // REGISTRADA POR
+    { wch: 14 }, // MODIFICADA
+    { wch: 24 }, // FECHA MODIFICACIÓN
+    { wch: 28 }, // MODIFICADA POR
   ];
 
   const workbook = XLSX.utils.book_new();
@@ -106,6 +131,9 @@ export function exportarAsistenciasACSV(
 
   const rows = asistencias.map((asistencia, index) => {
     const { fecha, hora } = formatFechaHora(asistencia.fecha_hora || asistencia.fecha_local_str);
+    const fechaModificacion = asistencia.actualizado_en
+      ? formatFechaHora(asistencia.actualizado_en)
+      : null;
     const gps = asistencia.ubicacion_gps;
     const gpsCoordStr = gps ? `${gps.latitud?.toFixed(5) ?? 0}, ${gps.longitud?.toFixed(5) ?? 0}` : 'Sin GPS';
 
@@ -121,6 +149,14 @@ export function exportarAsistenciasACSV(
       'ENTIDAD': asistencia.entidad_federativa || '',
       'GPS': gpsCoordStr,
       'FOTO_DRIVE': asistencia.foto_drive_url || asistencia.foto_url || '',
+      'ASISTENCIA_ASISTIDA': asistencia.asistencia_manual ? 'Sí' : 'No',
+      'MOTIVO_ASISTENCIA_MANUAL': asistencia.motivo_registro_manual || '',
+      'REGISTRADA_POR': asistencia.registrada_por_nombre || '',
+      'MODIFICADA': asistencia.actualizado_en ? 'Sí' : 'No',
+      'FECHA_MODIFICACION': fechaModificacion
+        ? `${fechaModificacion.fecha} ${fechaModificacion.hora}`
+        : '',
+      'MODIFICADA_POR': asistencia.actualizado_por_nombre || '',
     };
   });
 
