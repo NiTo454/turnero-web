@@ -198,6 +198,14 @@ export default function PersonalAttendanceView({
                       <div className="text-[#64748B] text-[11px]">
                         Turno: {asistencia.turno} {asistencia.entidad_federativa ? `• ${asistencia.entidad_federativa}` : ''}
                       </div>
+                      {asistencia.asistencia_manual && (
+                        <div className="text-[#FBBF24] text-[11px] mt-1">
+                          Asistencia registrada por administración
+                          {asistencia.motivo_registro_manual
+                            ? `: ${asistencia.motivo_registro_manual}`
+                            : ''}
+                        </div>
+                      )}
                     </div>
                   </div>
 

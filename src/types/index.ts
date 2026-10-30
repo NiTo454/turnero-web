@@ -18,13 +18,42 @@ export interface Asistencia {
   pacientes: string[];
   total_pacientes: number;
   entidad_federativa: string;
-  ubicacion_gps: UbicacionGPS;
+  ubicacion_gps?: UbicacionGPS;
   gps_valido: boolean;
+  asistencia_manual?: boolean;
+  motivo_registro_manual?: string;
+  registrada_por_uid?: string;
+  registrada_por_nombre?: string;
+  actualizado_en?: unknown;
+  actualizado_por_uid?: string;
+  actualizado_por_nombre?: string;
   foto_url?: string;
   foto_drive_url?: string;
   foto_drive_id?: string;
   fecha_hora?: any;
   fecha_local_str?: string;
+}
+
+export interface IncidenciaAsistencia {
+  id: string;
+  empleado_uid: string;
+  empleado_nombre: string;
+  empleado_email: string;
+  empleado_rol: string;
+  tipo: 'ENTRADA' | 'SALIDA';
+  turno: string;
+  pacientes: string[];
+  entidad_federativa: string;
+  intentos: number;
+  motivo: string;
+  error_ubicacion: string;
+  ubicacion_gps?: UbicacionGPS;
+  foto_url?: string;
+  foto_drive_url?: string;
+  foto_drive_id?: string;
+  estado: 'PENDIENTE' | 'ATENDIDA';
+  fecha_local_str: string;
+  creado_en?: unknown;
 }
 
 export interface Empleado {

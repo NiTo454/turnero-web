@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Asistencia } from '@/types';
 import { formatFechaHora } from '@/lib/excel';
 import { filtrarAsistencias } from '@/lib/filters';
+import AttendanceRecordActions from '@/components/dashboard/AttendanceRecordActions';
 import {
   Search,
   MapPin,
@@ -21,10 +22,23 @@ import {
 
 interface Props {
   asistencias: Asistencia[];
+  puedeEditar: boolean;
+  puedeEliminar: boolean;
+  onViewAttendance: (asistencia: Asistencia) => void;
+  onEditAttendance: (asistencia: Asistencia) => void;
+  onDeleteAttendance: (asistencia: Asistencia) => void;
   onOpenPhoto: (url: string, title: string) => void;
 }
 
-export default function GlobalHistoryTable({ asistencias, onOpenPhoto }: Props) {
+export default function GlobalHistoryTable({
+  asistencias,
+  puedeEditar,
+  puedeEliminar,
+  onViewAttendance,
+  onEditAttendance,
+  onDeleteAttendance,
+  onOpenPhoto,
+}: Props) {
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'TODOS' | 'ENTRADA' | 'SALIDA'>('TODOS');
   const [filtroTurno, setFiltroTurno] = useState<string>('TODOS');
@@ -296,6 +310,18 @@ export default function GlobalHistoryTable({ asistencias, onOpenPhoto }: Props) 
                     <span className="text-[11px] text-[#64748B]">Sin foto</span>
                   )}
                 </div>
+                {(puedeEditar || puedeEliminar) && (
+                  <div className="pl-7">
+                    <AttendanceRecordActions
+                      recordName={item.empleado_nombre}
+                      onView={() => onViewAttendance(item)}
+                      canEdit={puedeEditar}
+                      canDelete={puedeEliminar}
+                      onEdit={() => onEditAttendance(item)}
+                      onDelete={() => onDeleteAttendance(item)}
+                    />
+                  </div>
+                )}
               </div>
             );
           })
@@ -316,12 +342,13 @@ export default function GlobalHistoryTable({ asistencias, onOpenPhoto }: Props) 
                 <th className="py-3 px-4">Pacientes</th>
                 <th className="py-3 px-4">Ubicación GPS</th>
                 <th className="py-3 px-4 text-center">Evidencia</th>
+                <th className="py-3 px-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1C2F4D]/50 text-white">
               {elementosPaginados.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-[#94A3B8]">
+                  <td colSpan={9} className="py-12 text-center text-[#94A3B8]">
                     No se encontraron asistencias con los filtros seleccionados.
                   </td>
                 </tr>
@@ -388,6 +415,16 @@ export default function GlobalHistoryTable({ asistencias, onOpenPhoto }: Props) 
                         ) : (
                           <span className="text-[#64748B] text-[10px]">—</span>
                         )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <AttendanceRecordActions
+                          recordName={item.empleado_nombre}
+                          onView={() => onViewAttendance(item)}
+                          canEdit={puedeEditar}
+                          canDelete={puedeEliminar}
+                          onEdit={() => onEditAttendance(item)}
+                          onDelete={() => onDeleteAttendance(item)}
+                        />
                       </td>
                     </tr>
                   );
