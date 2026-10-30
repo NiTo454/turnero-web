@@ -65,8 +65,10 @@ export default function DashboardPage() {
   const [eliminandoAsistencia, setEliminandoAsistencia] = useState(false);
   const [errorGestionAsistencia, setErrorGestionAsistencia] = useState<string | null>(null);
 
-  const puedeEditarAsistencias = tienePermiso(PERMISOS.EDITAR_ASISTENCIAS);
-  const puedeEliminarAsistencias = tienePermiso(PERMISOS.ELIMINAR_ASISTENCIAS);
+  const puedeEditarAsistencias =
+    esAdmin || tienePermiso(PERMISOS.EDITAR_ASISTENCIAS);
+  const puedeEliminarAsistencias =
+    esAdmin || tienePermiso(PERMISOS.ELIMINAR_ASISTENCIAS);
   const puedeVerHistorial =
     esAdmin ||
     tienePermiso('reportes.ver_historial') ||

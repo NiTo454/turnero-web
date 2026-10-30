@@ -310,18 +310,16 @@ export default function GlobalHistoryTable({
                     <span className="text-[11px] text-[#64748B]">Sin foto</span>
                   )}
                 </div>
-                {(puedeEditar || puedeEliminar) && (
-                  <div className="pl-7">
-                    <AttendanceRecordActions
-                      recordName={item.empleado_nombre}
-                      onView={() => onViewAttendance(item)}
-                      canEdit={puedeEditar}
-                      canDelete={puedeEliminar}
-                      onEdit={() => onEditAttendance(item)}
-                      onDelete={() => onDeleteAttendance(item)}
-                    />
-                  </div>
-                )}
+                <div className="pl-7 pt-1">
+                  <AttendanceRecordActions
+                    recordName={item.empleado_nombre}
+                    onView={() => onViewAttendance(item)}
+                    canEdit={puedeEditar}
+                    canDelete={puedeEliminar}
+                    onEdit={() => onEditAttendance(item)}
+                    onDelete={() => onDeleteAttendance(item)}
+                  />
+                </div>
               </div>
             );
           })
