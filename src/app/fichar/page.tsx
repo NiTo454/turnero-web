@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { tienePerfilCompleto } from '@/lib/profile';
 import { subirFotoAGoogleDrive } from '@/lib/drive';
 import { IncidenciaAsistencia } from '@/types';
 import confetti from 'canvas-confetti';
@@ -107,8 +108,10 @@ export default function FichajePage() {
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
+    } else if (!loading && user && !tienePerfilCompleto(empleado, user.uid)) {
+      router.push('/completar-perfil');
     }
-  }, [user, loading, router]);
+  }, [user, empleado, loading, router]);
 
   // Manejadores de pacientes
   const handlePacienteChange = (index: number, val: string) => {

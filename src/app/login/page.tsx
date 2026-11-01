@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Activity, ShieldCheck, Stethoscope, AlertCircle, Sparkles } from 'lucide-react';
+import { tienePerfilCompleto } from '@/lib/profile';
 
 export default function LoginPage() {
   const { user, empleado, signInWithGoogle, loading } = useAuth();
@@ -13,7 +14,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      if (empleado && !empleado.perfil_completado) {
+      if (!tienePerfilCompleto(empleado, user.uid)) {
         router.push('/completar-perfil');
       } else {
         router.push('/');

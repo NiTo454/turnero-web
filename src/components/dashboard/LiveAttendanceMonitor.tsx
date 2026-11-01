@@ -57,14 +57,14 @@ export default function LiveAttendanceMonitor({
   onDeleteAttendance,
   onOpenPhoto,
 }: Props) {
-  const [fechaSeleccionada, setFechaSeleccionada] = useState<string>('');
-  const [filtroEstado, setFiltroEstado] = useState<'TODOS' | 'LLEGARON' | 'FALTAN'>('TODOS');
+  const [fechaSeleccionada, setFechaSeleccionada] = useState<string>(
+    () => obtenerFechaLocalIso(new Date())
+  );
+  const [filtroEstado, setFiltroEstado] = useState<
+    'TODOS' | 'ENTRADAS' | 'SALIDAS' | 'FALTAN'
+  >('TODOS');
   const [incidenciaEnProceso, setIncidenciaEnProceso] = useState<string | null>(null);
   const [errorAccionIncidencia, setErrorAccionIncidencia] = useState<string | null>(null);
-
-  React.useEffect(() => {
-    setFechaSeleccionada(obtenerFechaLocalIso(new Date()));
-  }, []);
 
   const asistenciasDelDia = useMemo(() => {
     return asistencias.filter((a) => {
@@ -83,6 +83,11 @@ export default function LiveAttendanceMonitor({
 
   const entradasHoy = asistenciasDelDia.filter((a) => a.tipo === 'ENTRADA').length;
   const salidasHoy = asistenciasDelDia.filter((a) => a.tipo === 'SALIDA').length;
+  const movimientosVisibles = asistenciasDelDia.filter((asistencia) => {
+    if (filtroEstado === 'ENTRADAS') return asistencia.tipo === 'ENTRADA';
+    if (filtroEstado === 'SALIDAS') return asistencia.tipo === 'SALIDA';
+    return true;
+  });
   const incidenciasPendientes = incidencias.filter((incidencia) => incidencia.estado === 'PENDIENTE');
 
   return (
@@ -187,7 +192,7 @@ export default function LiveAttendanceMonitor({
         </div>
 
         <div className="flex items-center bg-[#101C30] p-1.5 rounded-xl border border-[#1C2F4D] self-start md:self-auto">
-          {(['TODOS', 'LLEGARON', 'FALTAN'] as const).map((filtro) => (
+          {(['TODOS', 'ENTRADAS', 'SALIDAS', 'FALTAN'] as const).map((filtro) => (
             <button
               key={filtro}
               onClick={() => setFiltroEstado(filtro)}
@@ -195,11 +200,19 @@ export default function LiveAttendanceMonitor({
                 filtroEstado === filtro
                   ? filtro === 'FALTAN'
                     ? 'bg-[#FBBF24] text-[#070C16] shadow-sm'
+                    : filtro === 'SALIDAS'
+                      ? 'bg-[#FB7185] text-[#070C16] shadow-sm'
                     : 'bg-[#00E5A3] text-[#070C16] shadow-sm'
                   : 'text-[#94A3B8] hover:text-white'
               }`}
             >
-              {filtro === 'TODOS' ? 'Todos' : filtro === 'LLEGARON' ? 'Llegaron' : `Faltan (${personalFaltante.length})`}
+              {filtro === 'TODOS'
+                ? 'Todos'
+                : filtro === 'ENTRADAS'
+                  ? `Entradas (${entradasHoy})`
+                  : filtro === 'SALIDAS'
+                    ? `Salidas (${salidasHoy})`
+                    : `Faltan (${personalFaltante.length})`}
             </button>
           ))}
         </div>
@@ -227,38 +240,44 @@ export default function LiveAttendanceMonitor({
           </div>
         </button>
 
-        {/* Entradas → filtra LLEGARON */}
+        {/* Entradas */}
         <button
           type="button"
-          onClick={() => setFiltroEstado('LLEGARON')}
+          onClick={() => setFiltroEstado('ENTRADAS')}
           className={`glass-card rounded-2xl p-4 border text-left transition-all cursor-pointer active:scale-95 ${
-            filtroEstado === 'LLEGARON'
+            filtroEstado === 'ENTRADAS'
               ? 'border-[#00E5A3]/60 ring-1 ring-[#00E5A3]/30 bg-[#00E5A3]/5'
               : 'border-[#1C2F4D] hover:border-[#00E5A3]/30'
           }`}
         >
           <div className="flex items-center justify-between text-[#94A3B8] text-xs mb-1">
             <span>Entradas</span>
-            <CheckCircle2 className={`w-4 h-4 ${filtroEstado === 'LLEGARON' ? 'text-[#00E5A3]' : 'text-[#64748B]'}`} />
+            <CheckCircle2 className={`w-4 h-4 ${filtroEstado === 'ENTRADAS' ? 'text-[#00E5A3]' : 'text-[#64748B]'}`} />
           </div>
           <div className="text-2xl font-extrabold text-[#00E5A3]">{entradasHoy}</div>
-          <div className={`text-[11px] mt-1 font-semibold ${filtroEstado === 'LLEGARON' ? 'text-[#00E5A3]' : 'text-[#64748B]'}`}>
-            {filtroEstado === 'LLEGARON' ? '▸ Viendo entradas' : 'Toca para ver entradas'}
+          <div className={`text-[11px] mt-1 font-semibold ${filtroEstado === 'ENTRADAS' ? 'text-[#00E5A3]' : 'text-[#64748B]'}`}>
+            {filtroEstado === 'ENTRADAS' ? '▸ Viendo entradas' : 'Toca para ver entradas'}
           </div>
         </button>
 
-        {/* Salidas → filtra LLEGARON (muestra movimientos) */}
+        {/* Salidas */}
         <button
           type="button"
-          onClick={() => setFiltroEstado('TODOS')}
-          className={`glass-card rounded-2xl p-4 border text-left transition-all cursor-pointer active:scale-95 border-[#1C2F4D] hover:border-[#FB7185]/30`}
+          onClick={() => setFiltroEstado('SALIDAS')}
+          className={`glass-card rounded-2xl p-4 border text-left transition-all cursor-pointer active:scale-95 ${
+            filtroEstado === 'SALIDAS'
+              ? 'border-[#FB7185]/60 ring-1 ring-[#FB7185]/30 bg-[#FB7185]/5'
+              : 'border-[#1C2F4D] hover:border-[#FB7185]/30'
+          }`}
         >
           <div className="flex items-center justify-between text-[#94A3B8] text-xs mb-1">
             <span>Salidas</span>
-            <Clock className="w-4 h-4 text-[#64748B]" />
+            <Clock className={`w-4 h-4 ${filtroEstado === 'SALIDAS' ? 'text-[#FB7185]' : 'text-[#64748B]'}`} />
           </div>
           <div className="text-2xl font-extrabold text-[#FB7185]">{salidasHoy}</div>
-          <div className="text-[11px] mt-1 font-semibold text-[#64748B]">Toca para ver todos</div>
+          <div className={`text-[11px] mt-1 font-semibold ${filtroEstado === 'SALIDAS' ? 'text-[#FB7185]' : 'text-[#64748B]'}`}>
+            {filtroEstado === 'SALIDAS' ? '▸ Viendo salidas' : 'Toca para ver salidas'}
+          </div>
         </button>
 
         {/* Personal pendiente → filtra FALTAN */}
@@ -358,21 +377,29 @@ export default function LiveAttendanceMonitor({
         </div>
       )}
 
-      {/* ── VISTA: LLEGARON / TODOS ── */}
+      {/* ── VISTA: MOVIMIENTOS ── */}
       {filtroEstado !== 'FALTAN' && (
         <div className="glass-card rounded-2xl p-5 border border-[#1C2F4D]">
           <h3 className="font-bold text-white text-base mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-[#00E5A3]" />
-            Movimientos Registrados ({asistenciasDelDia.length})
+            <Clock className={`w-5 h-5 ${filtroEstado === 'SALIDAS' ? 'text-[#FB7185]' : 'text-[#00E5A3]'}`} />
+            {filtroEstado === 'SALIDAS'
+              ? `Salidas Registradas (${movimientosVisibles.length})`
+              : filtroEstado === 'ENTRADAS'
+                ? `Entradas Registradas (${movimientosVisibles.length})`
+                : `Movimientos Registrados (${movimientosVisibles.length})`}
           </h3>
 
-          {asistenciasDelDia.length === 0 ? (
+          {movimientosVisibles.length === 0 ? (
             <div className="text-center py-10 text-[#94A3B8] text-sm">
-              No hay registros de asistencias para la fecha seleccionada.
+              {filtroEstado === 'SALIDAS'
+                ? 'No hay salidas para la fecha seleccionada.'
+                : filtroEstado === 'ENTRADAS'
+                  ? 'No hay entradas para la fecha seleccionada.'
+                  : 'No hay registros de asistencias para la fecha seleccionada.'}
             </div>
           ) : (
             <div className="space-y-3">
-              {asistenciasDelDia.map((asistencia) => {
+              {movimientosVisibles.map((asistencia) => {
                 const { hora } = formatFechaHora(asistencia.fecha_hora || asistencia.fecha_local_str);
                 const esEntrada = asistencia.tipo === 'ENTRADA';
                 const foto = asistencia.foto_url || asistencia.foto_drive_url;
