@@ -11,6 +11,7 @@ import { doc, onSnapshot, collection } from 'firebase/firestore';
 import { auth, db, googleProvider } from '@/lib/firebase';
 import { Empleado, RolDefinicion } from '@/types';
 import { ROLES_DEFAULT, calcularPermisosEfectivos, tienePermiso as checkPermiso } from '@/lib/permissions';
+import { isFirestoreAdmin } from '@/lib/firestore-access';
 
 interface AuthContextType {
   user: User | null;
@@ -46,7 +47,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
-      if (!firebaseUser) {
+      if (firebaseUser) {
+        setLoading(true);
+      } else {
         setEmpleado(null);
         setLoading(false);
       }
@@ -95,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userDocRef,
       (docSnap) => {
         if (docSnap.exists()) {
-          setEmpleado(docSnap.data() as Empleado);
+        setEmpleado({ ...(docSnap.data() as Empleado), uid: docSnap.id });
         } else {
           setEmpleado(null);
         }
@@ -136,14 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return checkPermiso(empleado, codename, roles);
   };
 
-  // esAdmin = el empleado tiene AL MENOS UNO de los permisos de gestión.
-  // Se calcula 100% desde permisosEfectivos (roles + directos - denegados),
-  // sin importar el nombre del rol. Así es extensible sin tocar código.
-  const esAdmin =
-    permisosEfectivos.has('personal.ver_todos') ||
-    permisosEfectivos.has('personal.editar_roles') ||
-    permisosEfectivos.has('personal.gestionar') ||
-    permisosEfectivos.has('reportes.ver_historial');
+  const esAdmin = isFirestoreAdmin(user?.uid, empleado);
 
   return (
     <AuthContext.Provider

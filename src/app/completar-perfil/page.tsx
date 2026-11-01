@@ -5,34 +5,34 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { UserCheck, Phone, User, HeartPulse, CheckCircle2, Shield, ArrowRight } from 'lucide-react';
+import { UserCheck, Phone, User, HeartPulse, CheckCircle2, Shield, Stethoscope, ArrowRight } from 'lucide-react';
+import { tienePerfilCompleto } from '@/lib/profile';
 
 export default function CompletarPerfilPage() {
   const { user, empleado, loading } = useAuth();
   const router = useRouter();
 
-  const [nombre, setNombre] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [rol, setRol] = useState<'Enfermera' | 'Enfermero'>('Enfermera');
+  const [nombre, setNombre] = useState<string | null>(null);
+  const [telefono, setTelefono] = useState<string | null>(null);
+  const [rol, setRol] = useState<'Enfermera' | 'Enfermero' | 'Doctor'>('Enfermera');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const nombrePerfil = nombre ?? empleado?.nombre ?? user?.displayName ?? '';
+  const telefonoPerfil = telefono ?? empleado?.telefono ?? '';
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
     }
-    if (user?.displayName && !nombre) {
-      setNombre(user.displayName);
-    }
-    if (empleado?.perfil_completado) {
+    if (tienePerfilCompleto(empleado, user?.uid)) {
       router.push('/');
     }
-  }, [user, empleado, loading, router, nombre]);
+  }, [user, empleado, loading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!nombre.trim()) {
+    if (!nombrePerfil.trim()) {
       setErrorMsg('Por favor ingresa tu nombre completo.');
       return;
     }
@@ -40,32 +40,37 @@ export default function CompletarPerfilPage() {
     setIsSaving(true);
     setErrorMsg(null);
     try {
-      const rolSeguro = rol === 'Enfermero' ? 'Enfermero' : 'Enfermera';
+      const empleadoExistente = empleado?.uid === user.uid ? empleado : null;
+      const rolSeguro = rol;
+      const datosPerfil: Record<string, unknown> = {
+        uid: user.uid,
+        nombre: nombrePerfil.trim(),
+        email: user.email || empleadoExistente?.email || '',
+        foto: user.photoURL || empleadoExistente?.foto || '',
+        telefono: telefonoPerfil.trim(),
+        perfil_completado: true,
+        actualizado_en: serverTimestamp(),
+      };
+
+      if (!empleadoExistente?.rol?.trim()) {
+        datosPerfil.rol = rolSeguro;
+        datosPerfil.is_active = empleadoExistente?.is_active ?? true;
+        datosPerfil.grupos = [rolSeguro.toLowerCase()];
+        datosPerfil.permisos_directos = empleadoExistente?.permisos_directos || [];
+      }
+
+      if (!empleadoExistente) {
+        datosPerfil.creado_en = serverTimestamp();
+      }
       const userDocRef = doc(db, 'empleados', user.uid);
 
-      await setDoc(
-        userDocRef,
-        {
-          uid: user.uid,
-          nombre: nombre.trim(),
-          email: user.email || '',
-          foto: user.photoURL || '',
-          telefono: telefono.trim(),
-          rol: rolSeguro,
-          is_active: true,
-          grupos: [rolSeguro.toLowerCase()],
-          permisos_directos: [],
-          perfil_completado: true,
-          actualizado_en: serverTimestamp(),
-          creado_en: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await setDoc(userDocRef, datosPerfil, { merge: true });
 
       router.push('/');
-    } catch (err: any) {
-      console.error(err);
-      setErrorMsg('Error al guardar el perfil: ' + err.message);
+    } catch (error) {
+      console.error(error);
+      const message = error instanceof Error ? error.message : String(error);
+      setErrorMsg('Error al guardar el perfil: ' + message);
       setIsSaving(false);
     }
   };
@@ -113,7 +118,7 @@ export default function CompletarPerfilPage() {
                 <input
                   type="text"
                   required
-                  value={nombre}
+                  value={nombrePerfil}
                   onChange={(e) => setNombre(e.target.value)}
                   placeholder="Ej. Lic. Ana Sofía Morales"
                   className="w-full pl-11 pr-4 py-3 rounded-xl bg-[#101C30] border border-[#1C2F4D] text-white placeholder-[#64748B] focus:outline-none focus:border-[#00E5A3] transition-colors text-sm"
@@ -132,7 +137,7 @@ export default function CompletarPerfilPage() {
                 </div>
                 <input
                   type="tel"
-                  value={telefono}
+                  value={telefonoPerfil}
                   onChange={(e) => setTelefono(e.target.value)}
                   placeholder="Ej. +52 55 1234 5678"
                   className="w-full pl-11 pr-4 py-3 rounded-xl bg-[#101C30] border border-[#1C2F4D] text-white placeholder-[#64748B] focus:outline-none focus:border-[#00E5A3] transition-colors text-sm"
@@ -140,12 +145,16 @@ export default function CompletarPerfilPage() {
               </div>
             </div>
 
-            {/* Selector de Rol */}
-            <div>
-              <label className="block text-xs font-semibold text-[#94A3B8] mb-2 uppercase tracking-wider">
-                Rol Clínico Principal
-              </label>
-              <div className="grid grid-cols-2 gap-3">
+            {empleado?.rol?.trim() ? (
+              <div className="p-4 rounded-xl bg-[#101C30] border border-[#1C2F4D] text-sm text-[#94A3B8]">
+                Rol clínico asignado: <span className="font-semibold text-white">{empleado.rol}</span>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-[#94A3B8] mb-2 uppercase tracking-wider">
+                  Rol Clínico Principal
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
                   type="button"
                   onClick={() => setRol('Enfermera')}
@@ -179,8 +188,26 @@ export default function CompletarPerfilPage() {
                   <div className="font-bold text-white text-sm">Enfermero</div>
                   <div className="text-[11px] text-[#94A3B8] mt-0.5">Atención y turnos</div>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRol('Doctor')}
+                  className={`p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${
+                    rol === 'Doctor'
+                      ? 'bg-[#A78BFA]/10 border-[#A78BFA] shadow-[0_0_20px_rgba(167,139,250,0.12)]'
+                      : 'bg-[#101C30] border-[#1C2F4D] hover:border-[#28436D]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <Stethoscope className={`w-6 h-6 ${rol === 'Doctor' ? 'text-[#A78BFA]' : 'text-[#64748B]'}`} />
+                    {rol === 'Doctor' && <CheckCircle2 className="w-5 h-5 text-[#A78BFA]" />}
+                  </div>
+                  <div className="font-bold text-white text-sm">Doctor</div>
+                  <div className="text-[11px] text-[#94A3B8] mt-0.5">Atención clínica</div>
+                </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Botón de Guardado */}
             <button

@@ -1,0 +1,131 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrapAdmin() {
+      return signedIn() && request.auth.uid in [
+        'QQWmSygBaGSZsUDFMVtWsqMZ5cE2',
+        'QZn49VMQN3RgsA8pWYKuRzKaEgs1'
+      ];
+    }
+
+    function isActiveEmployee() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/empleados/$(request.auth.uid))
+        && get(/databases/$(database)/documents/empleados/$(request.auth.uid)).data.is_active == true
+        && get(/databases/$(database)/documents/empleados/$(request.auth.uid)).data.perfil_completado == true;
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin()
+        || (
+          signedIn()
+          && exists(/databases/$(database)/documents/empleados/$(request.auth.uid))
+          && get(/databases/$(database)/documents/empleados/$(request.auth.uid)).data.is_active == true
+          && (
+            get(/databases/$(database)/documents/empleados/$(request.auth.uid)).data.rol == 'Administrador'
+            || get(/databases/$(database)/documents/empleados/$(request.auth.uid)).data.get('grupos', []).hasAny(['administrador'])
+          )
+        );
+    }
+
+    function isBasicProfile(uid) {
+      return request.resource.data.uid == uid
+        && request.resource.data.perfil_completado == true
+        && request.resource.data.is_active == true
+        && request.resource.data.permisos_directos.size() == 0
+        && (
+          (
+            request.resource.data.rol == 'Enfermera'
+            && request.resource.data.grupos == ['enfermera']
+          )
+          ||
+          (
+            request.resource.data.rol == 'Enfermero'
+            && request.resource.data.grupos == ['enfermero']
+          )
+          ||
+          (
+            request.resource.data.rol == 'Doctor'
+            && request.resource.data.grupos == ['doctor']
+          )
+        );
+    }
+
+    match /empleados/{uid} {
+      allow get: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && isBasicProfile(uid);
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'uid',
+            'nombre',
+            'email',
+            'foto',
+            'telefono',
+            'rol',
+            'is_active',
+            'grupos',
+            'permisos_directos',
+            'perfil_completado',
+            'actualizado_en'
+          ])
+          && request.resource.data.uid == uid
+          && request.resource.data.nombre is string
+          && request.resource.data.nombre.size() > 0
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.perfil_completado == true
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'rol',
+              'is_active',
+              'grupos',
+              'permisos_directos'
+            ])
+            || (
+              !resource.data.keys().hasAny(['rol'])
+              && isBasicProfile(uid)
+            )
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /asistencias/{asistenciaId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.empleado_uid == request.auth.uid);
+
+      allow create: if isAdmin()
+        || (isActiveEmployee() && request.resource.data.empleado_uid == request.auth.uid);
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /incidencias_asistencia/{incidenciaId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.empleado_uid == request.auth.uid);
+
+      allow create: if signedIn()
+        && isActiveEmployee()
+        && request.resource.data.empleado_uid == request.auth.uid
+        && request.resource.data.estado == 'PENDIENTE';
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /roles/{rolId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Reglas de Cloud Firestore
+
+Las reglas de producción están en [`firestore.rules`](./firestore.rules). Para aplicarlas, abre **Firebase Console → Firestore Database → Reglas**, reemplaza el contenido por el de ese archivo y pulsa **Publicar**. Los dos UID iniciales conservan acceso administrativo; después, cualquier empleado activo al que un administrador asigne el rol Administrador desde el panel obtiene acceso automáticamente, sin editar la lista de UID. Las cuentas normales pueden completar su perfil y consultar sus propios fichajes.
+
 ## Getting Started
 
 First, run the development server:

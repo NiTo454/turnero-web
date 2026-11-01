@@ -10,6 +10,7 @@ import {
   query,
   orderBy,
   limit,
+  where,
   runTransaction,
   serverTimestamp,
   Timestamp,
@@ -18,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Asistencia, Empleado, IncidenciaAsistencia } from '@/types';
-import { PERMISOS } from '@/lib/permissions';
+import { tienePerfilCompleto } from '@/lib/profile';
 import Navbar from '@/components/dashboard/Navbar';
 import LiveAttendanceMonitor from '@/components/dashboard/LiveAttendanceMonitor';
 import GlobalHistoryTable from '@/components/dashboard/GlobalHistoryTable';
@@ -42,7 +43,7 @@ import {
 } from 'lucide-react';
 
 export default function DashboardPage() {
-  const { user, empleado, loading, esAdmin, tienePermiso, roles } = useAuth();
+  const { user, empleado, loading, esAdmin, roles } = useAuth();
   const router = useRouter();
 
   // Estados de datos
@@ -51,6 +52,7 @@ export default function DashboardPage() {
   const [incidencias, setIncidencias] = useState<IncidenciaAsistencia[]>([]);
   const [incidenciasError, setIncidenciasError] = useState<string | null>(null);
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [asistenciasError, setAsistenciasError] = useState<string | null>(null);
 
   // Estados de navegación interna
   const [tabActiva, setTabActiva] = useState<'monitor' | 'historial' | 'equipo'>('monitor');
@@ -65,19 +67,13 @@ export default function DashboardPage() {
   const [eliminandoAsistencia, setEliminandoAsistencia] = useState(false);
   const [errorGestionAsistencia, setErrorGestionAsistencia] = useState<string | null>(null);
 
-  const puedeEditarAsistencias =
-    esAdmin || tienePermiso(PERMISOS.EDITAR_ASISTENCIAS);
-  const puedeEliminarAsistencias =
-    esAdmin || tienePermiso(PERMISOS.ELIMINAR_ASISTENCIAS);
-  const puedeVerHistorial =
-    esAdmin ||
-    tienePermiso('reportes.ver_historial') ||
-    puedeEditarAsistencias ||
-    puedeEliminarAsistencias;
-  const puedeExportar = esAdmin || tienePermiso('reportes.exportar_excel');
-  const puedeVerPersonal = esAdmin || tienePermiso('personal.ver_todos');
-  const puedeEditarRoles = esAdmin || tienePermiso('personal.editar_roles');
-  const esVistaAdmin = esAdmin || puedeVerPersonal || puedeVerHistorial;
+  const puedeEditarAsistencias = esAdmin;
+  const puedeEliminarAsistencias = esAdmin;
+  const puedeVerHistorial = esAdmin;
+  const puedeExportar = esAdmin;
+  const puedeVerPersonal = esAdmin;
+  const puedeEditarRoles = esAdmin;
+  const esVistaAdmin = esAdmin;
 
   const guardarEdicionAsistencia = async (cambios: AttendanceChanges) => {
     if (!user || !puedeEditarAsistencias) {
@@ -143,61 +139,58 @@ export default function DashboardPage() {
     if (!loading) {
       if (!user) {
         router.push('/login');
-      } else if (empleado && !empleado.perfil_completado) {
+      } else if (!tienePerfilCompleto(empleado, user.uid)) {
         router.push('/completar-perfil');
       }
     }
   }, [user, empleado, loading, router]);
 
-  // Escuchar asistencias en tiempo real
+  // Los administradores consultan el historial global; los demás, solo sus fichajes.
   useEffect(() => {
     if (!user) return;
 
-    try {
-      // Obtenemos las asistencias ordenadas por fecha más reciente
-      const q = query(
-        collection(db, 'asistencias'),
-        orderBy('fecha_hora', 'desc'),
-        limit(500)
-      );
+    const attendanceQuery = esAdmin
+      ? query(
+          collection(db, 'asistencias'),
+          orderBy('fecha_hora', 'desc'),
+          limit(500)
+        )
+      : query(
+          collection(db, 'asistencias'),
+          where('empleado_uid', '==', user.uid)
+        );
 
-      const unsubAsistencias = onSnapshot(
-        q,
-        (snapshot) => {
-          const list: Asistencia[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...(docSnap.data() as any) });
+    const unsubscribe = onSnapshot(
+      attendanceQuery,
+      (snapshot) => {
+        const list: Asistencia[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...(docSnap.data() as Asistencia) });
+        });
+        if (!esAdmin) {
+          list.sort((a, b) => {
+            const timeA = a.fecha_hora?.seconds
+              ? a.fecha_hora.seconds * 1000
+              : new Date(a.fecha_local_str || 0).getTime();
+            const timeB = b.fecha_hora?.seconds
+              ? b.fecha_hora.seconds * 1000
+              : new Date(b.fecha_local_str || 0).getTime();
+            return timeB - timeA;
           });
-          setAsistencias(list);
-          setIsDataLoading(false);
-        },
-        (error) => {
-          console.warn('Error con índice de asistencias, fallback a colección cruda:', error);
-          // Fallback en caso de que falte un índice compuesto en Firestore
-          const unsubFallback = onSnapshot(collection(db, 'asistencias'), (snapshot) => {
-            const list: Asistencia[] = [];
-            snapshot.forEach((docSnap) => {
-              list.push({ id: docSnap.id, ...(docSnap.data() as any) });
-            });
-            // Ordenar en memoria
-            list.sort((a, b) => {
-              const timeA = a.fecha_hora?.seconds ? a.fecha_hora.seconds * 1000 : new Date(a.fecha_local_str || 0).getTime();
-              const timeB = b.fecha_hora?.seconds ? b.fecha_hora.seconds * 1000 : new Date(b.fecha_local_str || 0).getTime();
-              return timeB - timeA;
-            });
-            setAsistencias(list);
-            setIsDataLoading(false);
-          });
-          return () => unsubFallback();
         }
-      );
+        setAsistencias(list);
+        setAsistenciasError(null);
+        setIsDataLoading(false);
+      },
+      (error) => {
+        console.error('Error al escuchar asistencias:', error);
+        setAsistenciasError('No se pudieron cargar las asistencias. Verifica las reglas de Firestore.');
+        setIsDataLoading(false);
+      }
+    );
 
-      return () => unsubAsistencias();
-    } catch (e) {
-      console.error(e);
-      setIsDataLoading(false);
-    }
-  }, [user]);
+    return () => unsubscribe();
+  }, [user, esAdmin]);
 
   useEffect(() => {
     if (!user || !esAdmin) return;
@@ -279,18 +272,24 @@ export default function DashboardPage() {
 
   // Escuchar lista de empleados
   useEffect(() => {
-    if (!user) return;
+    if (!user || !esAdmin) return;
 
-    const unsubEmpleados = onSnapshot(collection(db, 'empleados'), (snapshot) => {
-      const list: Empleado[] = [];
-      snapshot.forEach((d) => {
-        list.push({ uid: d.id, ...(d.data() as any) });
-      });
-      setEmpleados(list);
-    });
+    const unsubEmpleados = onSnapshot(
+      collection(db, 'empleados'),
+      (snapshot) => {
+        const list: Empleado[] = [];
+        snapshot.forEach((d) => {
+          list.push({ ...(d.data() as Empleado), uid: d.id });
+        });
+        setEmpleados(list);
+      },
+      (error) => {
+        console.error('Error al escuchar empleados:', error);
+      }
+    );
 
     return () => unsubEmpleados();
-  }, [user]);
+  }, [user, esAdmin]);
 
   // Asistencias propias del usuario autenticado
   const asistenciasPropias = React.useMemo(() => {
@@ -313,6 +312,11 @@ export default function DashboardPage() {
       <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 sm:pb-8 space-y-6">
+        {asistenciasError && (
+          <div role="alert" className="p-3 rounded-xl bg-[#FB7185]/10 border border-[#FB7185]/30 text-sm text-[#FB7185]">
+            {asistenciasError}
+          </div>
+        )}
         {errorGestionAsistencia && (
           <div role="alert" className="p-3 rounded-xl bg-[#FB7185]/10 border border-[#FB7185]/30 text-sm text-[#FB7185]">
             {errorGestionAsistencia}
