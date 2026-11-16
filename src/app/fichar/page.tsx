@@ -7,6 +7,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { tienePerfilCompleto } from '@/lib/profile';
 import { subirFotoAGoogleDrive } from '@/lib/drive';
+import { prepararFotoEvidencia } from '@/lib/evidence-photo';
 import { IncidenciaAsistencia } from '@/types';
 import confetti from 'canvas-confetti';
 import {
@@ -86,6 +87,8 @@ export default function FichajePage() {
   // Foto
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+  const [procesandoFoto, setProcesandoFoto] = useState(false);
+  const [errorFoto, setErrorFoto] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Proceso de guardado
@@ -113,6 +116,12 @@ export default function FichajePage() {
     }
   }, [user, empleado, loading, router]);
 
+  useEffect(() => {
+    return () => {
+      if (fotoPreview?.startsWith('blob:')) URL.revokeObjectURL(fotoPreview);
+    };
+  }, [fotoPreview]);
+
   // Manejadores de pacientes
   const handlePacienteChange = (index: number, val: string) => {
     const updated = [...pacientes];
@@ -133,16 +142,29 @@ export default function FichajePage() {
   };
 
   // Manejo de la foto
-  const handleFotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
     if (!file) return;
 
-    setFotoFile(file);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setFotoPreview(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    setProcesandoFoto(true);
+    setErrorFoto(null);
+    try {
+      const fotoPreparada = await prepararFotoEvidencia(file);
+      setFotoFile(fotoPreparada);
+      setFotoPreview(URL.createObjectURL(fotoPreparada));
+    } catch (error) {
+      setErrorFoto(error instanceof Error ? error.message : 'No se pudo preparar la fotografía.');
+    } finally {
+      setProcesandoFoto(false);
+    }
+  };
+
+  const quitarFoto = () => {
+    setFotoFile(null);
+    setFotoPreview(null);
+    setErrorFoto(null);
   };
 
   const registrarIntentoFallido = (motivo: string) => {
@@ -172,7 +194,11 @@ export default function FichajePage() {
           fotoIncidencia = await subirFotoAGoogleDrive(fotoFile || fotoPreview!);
         } catch (photoError) {
           console.error('Error al subir fotografía de la solicitud:', photoError);
-          throw new Error('No se pudo subir la fotografía. Verifica tu conexión e inténtalo de nuevo.');
+          throw new Error(
+            photoError instanceof Error
+              ? photoError.message
+              : 'No se pudo subir la fotografía. Verifica tu conexión e inténtalo de nuevo.'
+          );
         }
       }
 
@@ -189,8 +215,8 @@ export default function FichajePage() {
         motivo,
         error_ubicacion: gpsError || 'No se pudo completar el registro de asistencia.',
         ...(gps ? { ubicacion_gps: gps } : {}),
-        ...(fotoIncidencia.url || fotoPreview
-          ? { foto_url: fotoIncidencia.url || fotoPreview! }
+        ...(fotoIncidencia.url
+          ? { foto_url: fotoIncidencia.url }
           : {}),
         ...(fotoIncidencia.drive_url ? { foto_drive_url: fotoIncidencia.drive_url } : {}),
         ...(fotoIncidencia.id ? { foto_drive_id: fotoIncidencia.id } : {}),
@@ -208,7 +234,11 @@ export default function FichajePage() {
       setTimeout(() => router.replace('/'), 1000);
     } catch (error) {
       console.error('Error al enviar solicitud de asistencia:', error);
-      setErrorIncidencia('No se pudo enviar la solicitud. Revisa tu conexión e inténtalo de nuevo.');
+      setErrorIncidencia(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo enviar la solicitud. Revisa tu conexión e inténtalo de nuevo.'
+      );
     } finally {
       incidenciaEnProcesoRef.current = false;
       setEnviandoIncidencia(false);
@@ -234,7 +264,7 @@ export default function FichajePage() {
       return;
     }
 
-    if (!fotoFile && !fotoPreview) {
+    if (!fotoFile) {
       setFormError('La foto de evidencia es obligatoria.');
       return;
     }
@@ -242,17 +272,8 @@ export default function FichajePage() {
     setIsSaving(true);
     try {
       // 1. Subir a Google Drive
-      setSavingStep('Subiendo evidencia fotográfica a Google Drive...');
-      let driveData = { id: '', url: '', drive_url: '' };
-      try {
-        if (fotoFile) {
-          driveData = await subirFotoAGoogleDrive(fotoFile);
-        } else if (fotoPreview) {
-          driveData = await subirFotoAGoogleDrive(fotoPreview);
-        }
-      } catch (err) {
-        console.warn('Advertencia subiendo foto a Drive:', err);
-      }
+      setSavingStep('Optimizando y subiendo evidencia fotográfica...');
+      const driveData = await subirFotoAGoogleDrive(fotoFile);
 
       // 2. Guardar en Firestore
       setSavingStep('Registrando asistencia en Firestore...');
@@ -280,7 +301,7 @@ export default function FichajePage() {
           calidad_gps: gps.calidad_gps,
         },
         gps_valido: gps.precision_metros <= 45,
-        foto_url: driveData.url || fotoPreview || '',
+        foto_url: driveData.url,
         foto_drive_url: driveData.drive_url || '',
         foto_drive_id: driveData.id || '',
         fecha_hora: serverTimestamp(),
@@ -313,11 +334,11 @@ export default function FichajePage() {
 
       setTimeout(() => {
         router.replace('/');
-      }, 1200);
+      }, 600);
     } catch (err) {
       console.error(err);
       const detalle = err instanceof Error ? err.message : String(err);
-      const motivo = 'Error al guardar asistencia: ' + detalle;
+      const motivo = detalle;
       setFormError(motivo);
       registrarIntentoFallido(motivo);
       setIsSaving(false);
@@ -526,10 +547,15 @@ export default function FichajePage() {
                       <span className="text-xs text-[#00E5A3] flex-1">Foto lista para enviar</span>
                       <button
                         type="button"
-                        onClick={() => {
-                          setFotoFile(null);
-                          setFotoPreview(null);
-                        }}
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={procesandoFoto || enviandoIncidencia}
+                        className="px-3 py-2 rounded-lg text-xs text-[#38BDF8] border border-[#38BDF8]/30 disabled:opacity-50"
+                      >
+                        Cambiar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={quitarFoto}
                         className="px-3 py-2 rounded-lg text-xs text-[#FB7185] border border-[#FB7185]/30"
                       >
                         Quitar
@@ -539,12 +565,17 @@ export default function FichajePage() {
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
+                      disabled={procesandoFoto || isSaving}
                       className="w-full min-h-11 rounded-xl bg-[#101C30] border border-[#1C2F4D] text-sm font-semibold text-[#38BDF8]"
                     >
                       Tomar o elegir fotografía
                     </button>
                   )}
                 </div>
+                {procesandoFoto && (
+                  <p role="status" className="mt-2 text-xs text-[#38BDF8]">Preparando fotografía...</p>
+                )}
+                {errorFoto && <p role="alert" className="mt-2 text-xs text-[#FB7185]">{errorFoto}</p>}
                 <label className="block text-xs font-semibold text-[#94A3B8]">
                   ¿Qué problema tuviste?
                   <textarea
@@ -562,7 +593,7 @@ export default function FichajePage() {
                 )}
                 <button
                   type="submit"
-                  disabled={incidenciaEnviada || enviandoIncidencia}
+                  disabled={incidenciaEnviada || enviandoIncidencia || procesandoFoto}
                   className="w-full min-h-12 py-3 rounded-xl bg-[#FB7185] text-[#070C16] font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <Send className="w-4 h-4" />
@@ -801,7 +832,6 @@ export default function FichajePage() {
               type="file"
               ref={fileInputRef}
               accept="image/*"
-              capture="environment"
               onChange={handleFotoSelected}
               className="hidden"
             />
@@ -810,36 +840,49 @@ export default function FichajePage() {
               <div className="relative rounded-2xl overflow-hidden border border-[#1C2F4D] max-h-72 flex items-center justify-center bg-black/40">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={fotoPreview} alt="Evidencia de fichaje" className="w-full h-auto max-h-72 object-contain" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFotoFile(null);
-                    setFotoPreview(null);
-                  }}
-                  className="absolute top-3 right-3 p-2 rounded-xl bg-[#FB7185] text-[#070C16] shadow-lg cursor-pointer hover:opacity-90"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="absolute top-3 right-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={procesandoFoto || isSaving}
+                    className="min-h-10 rounded-xl bg-[#101C30]/90 px-3 text-xs font-semibold text-white shadow-lg disabled:opacity-50"
+                  >
+                    Cambiar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={quitarFoto}
+                    disabled={isSaving}
+                    aria-label="Quitar fotografía"
+                    className="p-2 rounded-xl bg-[#FB7185] text-[#070C16] shadow-lg cursor-pointer hover:opacity-90 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full py-8 border-2 border-dashed border-[#1C2F4D] hover:border-[#00E5A3] rounded-2xl flex flex-col items-center justify-center gap-2.5 text-[#94A3B8] hover:text-white transition-colors cursor-pointer bg-[#101C30]/50"
+                disabled={procesandoFoto || isSaving}
+                className="w-full py-8 border-2 border-dashed border-[#1C2F4D] hover:border-[#00E5A3] rounded-2xl flex flex-col items-center justify-center gap-2.5 text-[#94A3B8] hover:text-white transition-colors cursor-pointer bg-[#101C30]/50 disabled:opacity-50"
               >
                 <div className="p-3 rounded-2xl bg-[#00E5A3]/10 text-[#00E5A3]">
                   <Camera className="w-6 h-6" />
                 </div>
                 <div className="text-sm font-semibold">Tomar o subir foto de evidencia</div>
-                <div className="text-xs text-[#64748B]">Selfie o comprobante del consultorio / clínica</div>
+                <div className="text-xs text-[#64748B]">
+                  {procesandoFoto ? 'Optimizando imagen...' : 'Puedes tomar una foto o elegirla de tu dispositivo'}
+                </div>
               </button>
             )}
+            {errorFoto && <p role="alert" className="mt-3 text-sm text-[#FB7185]">{errorFoto}</p>}
           </div>
 
           {/* Botón Principal para Fichar */}
           <button
             type="submit"
-            disabled={isSaving}
+            disabled={isSaving || procesandoFoto}
             className={`w-full py-4 rounded-2xl font-bold text-base shadow-2xl transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 ${
               tipo === 'ENTRADA'
                 ? 'bg-gradient-to-r from-[#00E5A3] to-[#38BDF8] text-[#070C16] mint-glow'
