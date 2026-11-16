@@ -51,7 +51,6 @@ export default function DashboardPage() {
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
   const [incidencias, setIncidencias] = useState<IncidenciaAsistencia[]>([]);
   const [incidenciasError, setIncidenciasError] = useState<string | null>(null);
-  const [isDataLoading, setIsDataLoading] = useState(true);
   const [asistenciasError, setAsistenciasError] = useState<string | null>(null);
 
   // Estados de navegación interna
@@ -180,12 +179,10 @@ export default function DashboardPage() {
         }
         setAsistencias(list);
         setAsistenciasError(null);
-        setIsDataLoading(false);
       },
       (error) => {
         console.error('Error al escuchar asistencias:', error);
         setAsistenciasError('No se pudieron cargar las asistencias. Verifica las reglas de Firestore.');
-        setIsDataLoading(false);
       }
     );
 
@@ -296,7 +293,7 @@ export default function DashboardPage() {
     return asistencias.filter((a) => a.empleado_uid === user?.uid);
   }, [asistencias, user]);
 
-  if (loading || (!user && !isDataLoading)) {
+  if (loading || !user) {
     return (
       <div className="min-h-screen bg-[#070C16] flex flex-col items-center justify-center text-[#94A3B8] gap-3">
         <div className="w-10 h-10 border-3 border-[#00E5A3] border-t-transparent rounded-full animate-spin" />

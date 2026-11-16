@@ -1,9 +1,10 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
 import { Asistencia } from '@/types';
 import { X, ImagePlus } from 'lucide-react';
 import { subirFotoAGoogleDrive } from '@/lib/drive';
+import { prepararFotoEvidencia } from '@/lib/evidence-photo';
 
 interface Props {
   asistencia: Asistencia;
@@ -62,6 +63,33 @@ export default function EditAttendanceModal({
   const [fotoPreview, setFotoPreview] = useState(asistencia.foto_url || asistencia.foto_drive_url || '');
   const [eliminarFoto, setEliminarFoto] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [procesandoFoto, setProcesandoFoto] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (fotoPreview.startsWith('blob:')) URL.revokeObjectURL(fotoPreview);
+    };
+  }, [fotoPreview]);
+
+  const handleFotoSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    setProcesandoFoto(true);
+    setError(null);
+    try {
+      const fotoPreparada = await prepararFotoEvidencia(file);
+      setFotoFile(fotoPreparada);
+      setFotoPreview(URL.createObjectURL(fotoPreparada));
+      setEliminarFoto(false);
+    } catch (photoError) {
+      setError(photoError instanceof Error ? photoError.message : 'No se pudo preparar la fotografía.');
+    } finally {
+      setProcesandoFoto(false);
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -83,7 +111,7 @@ export default function EditAttendanceModal({
       if (fotoFile) {
         const driveFoto = await subirFotoAGoogleDrive(fotoFile);
         camposFoto = {
-          foto_url: driveFoto.url || fotoPreview,
+          foto_url: driveFoto.url,
           foto_drive_url: driveFoto.drive_url,
           foto_drive_id: driveFoto.id,
         };
@@ -222,23 +250,12 @@ export default function EditAttendanceModal({
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   className="sr-only"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    setFotoFile(file);
-                    setEliminarFoto(false);
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      if (typeof reader.result === 'string') setFotoPreview(reader.result);
-                    };
-                    reader.onerror = () => setError('No se pudo leer la fotografía seleccionada.');
-                    reader.readAsDataURL(file);
-                  }}
+                  onChange={handleFotoSelected}
                 />
               </label>
             )}
+            {procesandoFoto && <p role="status" className="mt-2 text-xs text-[#38BDF8]">Preparando fotografía...</p>}
           </div>
 
           {error && <p role="alert" className="text-sm text-[#FB7185]">{error}</p>}
@@ -247,14 +264,14 @@ export default function EditAttendanceModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={isSaving}
+              disabled={isSaving || procesandoFoto}
               className="px-4 py-2.5 rounded-xl bg-[#101C30] border border-[#1C2F4D] text-sm font-semibold text-[#94A3B8] disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              disabled={isSaving}
+              disabled={isSaving || procesandoFoto}
               className="px-4 py-2.5 rounded-xl bg-[#38BDF8] text-[#070C16] text-sm font-bold disabled:opacity-50"
             >
               {isSaving ? 'Guardando...' : 'Guardar cambios'}
